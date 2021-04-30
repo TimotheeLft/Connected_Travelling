@@ -49,7 +49,7 @@ APP_PWM_INSTANCE(PWM1,1);
 
 #define IS_SRVC_CHANGED_CHARACT_PRESENT 0                                           /**< Include the service_changed characteristic. If not enabled, the server's database cannot be changed for the lifetime of the device. */
 
-#define DEVICE_NAME                     "Slider"                               /**< Name of device. Will be included in the advertising data. */
+#define DEVICE_NAME                     "Travelling_tim"                               /**< Name of device. Will be included in the advertising data. */
 #define NUS_SERVICE_UUID_TYPE           BLE_UUID_TYPE_VENDOR_BEGIN                  /**< UUID type for the Nordic UART Service (vendor specific). */
 
 #define APP_ADV_INTERVAL                64                                          /**< The advertising interval (in units of 0.625 ms. This value corresponds to 40 ms). */
@@ -86,6 +86,7 @@ uint8_t valide = 0;
 uint8_t stop = 0;
 uint16_t size;
 uint8_t active_pwm_d = 0;
+uint8_t active_pwm_g = 0;
 uint8_t mess_on[2] = "On";
 uint8_t mess_off[3] = "Off";
 uint8_t buffer_reception[50];
@@ -108,7 +109,7 @@ void pwm_init(){
 	ret_code_t err_code;
 
 	/* 2-channel PWM, 200Hz, output on DK LED pins. */
-	app_pwm_config_t pwm1_cfg = APP_PWM_DEFAULT_CONFIG_2CH(5000L, BSP_LED_0, BSP_LED_1);
+	app_pwm_config_t pwm1_cfg = APP_PWM_DEFAULT_CONFIG_2CH(40L, BSP_LED_0, BSP_LED_1);
 
 	/* Switch the polarity of the second channel. */
 	pwm1_cfg.pin_polarity[1] = APP_PWM_POLARITY_ACTIVE_HIGH;
@@ -120,16 +121,12 @@ void pwm_init(){
 }
 
 void pwm_set(app_pwm_t const * const pwm, uint8_t channel, uint8_t state, app_pwm_duty_t duty){
-	ready_flag = false;
 	if(state == 1){
-		app_pwm_enable(pwm);
 		while (app_pwm_channel_duty_set(pwm, channel, duty) == NRF_ERROR_BUSY);
 	}
 	if(state == 0){
-		app_pwm_disable(pwm);
 		while (app_pwm_channel_duty_set(pwm, channel, 0) == NRF_ERROR_BUSY);
 	}
-	while(!ready_flag);
 }
 
 //uint8_t *uart_read(){
@@ -215,6 +212,7 @@ void control_led(uint8_t state){
 /**@snippet [Handling the data received over BLE] */
 static void nus_data_handler(ble_nus_t * p_nus, uint8_t * p_data, uint16_t length)
 {
+	ready_flag = false;
     for (uint32_t i = 0; i < length; i++)
     {
     	//buffer_reception[i] = p_data[i];
@@ -224,37 +222,21 @@ static void nus_data_handler(ble_nus_t * p_nus, uint8_t * p_data, uint16_t lengt
     	if(p_data[i] == pwm_d[i]){
     		valide = 0;
     	}
-    	//if(p_data[i])
-//        if(p_data[i] == '1'){
-//			control_led(1);
-//			uart_write(mess_on, 2);
-//		}
-//		if(p_data[i] == '2'){
-//			control_led(2);
-//			uart_write(mess_off, 3);
-//		}
-
-//		if(p_data[i] == 'P'){
-//			stop = 0;
-//			control_led(3);
-//		}
-//		if(p_data[i] == 'S'){
-//			stop = 1;
-//			control_led(3);
-//		}
     }
     if(valide == 1){
-		//control_led(2);
-		//uart_write(mess_off, 3);
-    	//printf("%d", valide);
-    	uart_write(pwm_g, 5);
-    	pwm_set(&PWM1, 1, 1, 50);
+    	if(active_pwm_g == 0){
+    		uart_write(pwm_g, 5);
+    		pwm_set(&PWM1, 1, 1, 50);
+
+    	}
+    	if(active_pwm_g == 1){
+    		uart_write(pwm_g, 5);
+    		pwm_set(&PWM1, 1, 0, 50);
+    	}
+    	active_pwm_g = !active_pwm_g;
 	}
     if(valide == 0){
-		//control_led(2);
-		//uart_write(mess_off, 3);
-		//printf("%d", valide);
-		uart_write(pwm_g, 5);
+		uart_write(pwm_d, 5);
 		pwm_set(&PWM1, 1, 0, 0);
 	}
     while(app_uart_put('\r') != NRF_SUCCESS);
@@ -647,6 +629,7 @@ int main(void)
     APP_TIMER_INIT(APP_TIMER_PRESCALER, APP_TIMER_OP_QUEUE_SIZE, false);
     nrf_gpio_cfg_output(20);
     nrf_gpio_cfg_output(1);
+    nrf_gpio_cfg_output(2);
     uart_init();
     buttons_leds_init(&erase_bonds);
     ble_stack_init();
@@ -658,10 +641,10 @@ int main(void)
 
     printf("%s",start_string);
     nrf_gpio_pin_set(1);
+    nrf_gpio_pin_set(2);
 
     err_code = ble_advertising_start(BLE_ADV_MODE_FAST);
     APP_ERROR_CHECK(err_code);
-
 
     // Enter main loop.
     for (;;)
@@ -669,6 +652,7 @@ int main(void)
     			/* ... or wait for callback. */
 		//APP_ERROR_CHECK(app_pwm_channel_duty_set(&PWM1, 1, value));
 		power_manage();
+		while(!ready_flag);
     }
 }
 
